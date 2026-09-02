@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TradingPulse.Domain\TradingPulse.Domain.csproj" />
+    <ProjectReference Include="..\TradingPulse.Application\TradingPulse.Application.csproj" />
+    <ProjectReference Include="..\TradingPulse.Infrastructure\TradingPulse.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

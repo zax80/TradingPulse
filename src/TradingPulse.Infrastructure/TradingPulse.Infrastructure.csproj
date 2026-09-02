@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TradingPulse.Domain\TradingPulse.Domain.csproj" />
+    <ProjectReference Include="..\TradingPulse.Application\TradingPulse.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.Extensions.* (DI, Options, Logging) via the shared framework, ahead of EF Core pulling them in Day 4. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TradingPulse.Api/TradingPulse.Api.csproj" />
+    <Project Path="src/TradingPulse.Application/TradingPulse.Application.csproj" />
+    <Project Path="src/TradingPulse.Domain/TradingPulse.Domain.csproj" />
+    <Project Path="src/TradingPulse.Infrastructure/TradingPulse.Infrastructure.csproj" />
+  </Folder>
+</Solution>

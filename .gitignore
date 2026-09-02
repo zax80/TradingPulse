@@ -1,0 +1,24 @@
+## .NET / Visual Studio
+bin/
+obj/
+out/
+*.user
+*.suo
+.vs/
+.vscode/
+.cr/
+
+## Rider / other IDEs
+.idea/
+*.DotSettings.user
+
+## Logs, local DB files, secrets
+*.log
+*.db
+*.sqlite
+appsettings.*.local.json
+secrets.json
+
+## OS
+.DS_Store
+Thumbs.db

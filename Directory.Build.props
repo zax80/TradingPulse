@@ -1,0 +1,14 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- .NET 10 (LTS) - satisfies the ".NET 9+" requirement; .NET 9 (STS) is out of support. See README "Design Decisions". -->
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <WarningsAsErrors>Nullable</WarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>
