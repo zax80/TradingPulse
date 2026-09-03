@@ -5,4 +5,7 @@
     <Project Path="src/TradingPulse.Domain/TradingPulse.Domain.csproj" />
     <Project Path="src/TradingPulse.Infrastructure/TradingPulse.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TradingPulse.Domain.Tests/TradingPulse.Domain.Tests.csproj" />
+  </Folder>
 </Solution>

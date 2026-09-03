@@ -11,6 +11,6 @@ public interface IPriceStateRepository
     /// <summary>Gets the latest snapshot for every symbol currently known.</summary>
     Task<IReadOnlyList<PriceSnapshot>> GetAllLatestAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Records a symbol's new latest snapshot, replacing whatever was there before.</summary>
-    Task UpsertAsync(PriceSnapshot snapshot, CancellationToken cancellationToken = default);
+    /// <summary>Applies a tick to the symbol's price state, computing derived values, and returns the resulting snapshot.</summary>
+    Task<PriceSnapshot> ApplyTickAsync(PriceUpdate tick, CancellationToken cancellationToken = default);
 }

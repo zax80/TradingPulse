@@ -1,22 +1,23 @@
 ﻿namespace TradingPulse.Domain;
 
 /// <summary>
-/// Mutable "latest known state" aggregate for one symbol. Expected usage is
-/// one instance per symbol, updated by a single writer; readers should use
-/// <see cref="ToSnapshot"/> rather than reading properties directly.
+/// Mutable "latest known state" cell for one symbol. Holds an immutable
+/// <see cref="PriceSnapshot"/> that gets atomically replaced on each tick
+/// via <see cref="Volatile"/> read/write over a private box, so a reader
+/// never sees a partially-updated snapshot and no lock is needed. Expected
+/// usage is a single writer per symbol; readers use <see cref="ToSnapshot"/>.
 /// </summary>
 public sealed class PriceState
 {
-    public string Symbol { get; }
-    public decimal BidPrice { get; private set; }
-    public decimal AskPrice { get; private set; }
-    public decimal CurrentMarketPrice { get; private set; }
-    public decimal Spread { get; private set; }
-    public decimal SpreadPercent { get; private set; }
-    public DateTimeOffset Timestamp { get; private set; }
+    private sealed class Box
+    {
+        public readonly PriceSnapshot Snapshot;
+        public Box(PriceSnapshot snapshot) => Snapshot = snapshot;
+    }
 
-    /// <summary>The <see cref="CurrentMarketPrice"/> as of the previous tick, or <c>null</c> before the first tick.</summary>
-    public decimal? PreviousMarketPrice { get; private set; }
+    public string Symbol { get; }
+
+    private Box? _box;
 
     private PriceState(string symbol)
     {
@@ -26,8 +27,8 @@ public sealed class PriceState
     /// <summary>Creates the empty, "no tick seen yet" state for a symbol.</summary>
     public static PriceState CreateEmpty(string symbol) => new(symbol);
 
-    /// <summary>Applies a new tick and recomputes the derived values.</summary>
-    public void Apply(PriceUpdate update)
+    /// <summary>Applies a new tick, computes the derived values, and returns the resulting snapshot.</summary>
+    public PriceSnapshot Apply(PriceUpdate update)
     {
         if (update.Symbol != Symbol)
         {
@@ -35,25 +36,25 @@ public sealed class PriceState
                 $"Tick for symbol '{update.Symbol}' cannot be applied to price state for '{Symbol}'.");
         }
 
-        var newMarketPrice = (update.BidPrice + update.AskPrice) / 2m;
+        var previousMarketPrice = Volatile.Read(ref _box)?.Snapshot.CurrentMarketPrice;
+        var currentMarketPrice = (update.BidPrice + update.AskPrice) / 2m;
+        var spread = update.AskPrice - update.BidPrice;
+        var spreadPercent = currentMarketPrice == 0 ? 0 : spread / currentMarketPrice * 100m;
 
-        PreviousMarketPrice = Timestamp == default ? null : CurrentMarketPrice;
+        var snapshot = new PriceSnapshot(
+            Symbol,
+            update.BidPrice,
+            update.AskPrice,
+            currentMarketPrice,
+            spread,
+            spreadPercent,
+            previousMarketPrice,
+            update.Timestamp);
 
-        BidPrice = update.BidPrice;
-        AskPrice = update.AskPrice;
-        CurrentMarketPrice = newMarketPrice;
-        Spread = update.AskPrice - update.BidPrice;
-        SpreadPercent = newMarketPrice == 0 ? 0 : Spread / newMarketPrice * 100m;
-        Timestamp = update.Timestamp;
+        Volatile.Write(ref _box, new Box(snapshot));
+        return snapshot;
     }
 
-    public PriceSnapshot ToSnapshot() => new(
-        Symbol,
-        BidPrice,
-        AskPrice,
-        CurrentMarketPrice,
-        Spread,
-        SpreadPercent,
-        PreviousMarketPrice,
-        Timestamp);
+    /// <summary>The latest snapshot, or <c>null</c> if no tick has been applied yet. Safe to call concurrently with <see cref="Apply"/>.</summary>
+    public PriceSnapshot? ToSnapshot() => Volatile.Read(ref _box)?.Snapshot;
 }
