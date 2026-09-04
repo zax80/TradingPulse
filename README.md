@@ -2,7 +2,7 @@
 
 Simulates a multi-symbol market data feed, validates/auto-generates trading orders against configurable rules, persists results, exposes a REST API. Interview take-home — see the task brief for full requirements.
 
-**Status: Day 2 of 5.** Pricing engine (10 simulated instruments), tick consumer, in-memory latest-price store, `/health` + temporary `/debug/prices`. No trading rules, auto-trading, or persistence yet.
+**Status: Day 3 of 5.** Trading rules engine, spread-based auto-trading, wired end to end (tick → auto-order → rules → decision persisted). Rules and orders are still in-memory — EF Core persistence lands Day 4.
 
 ## How to Run
 
@@ -17,9 +17,9 @@ dotnet run --project src/TradingPulse.Api
 ```
 Open `http://localhost:<port>/health` → `{"status":"healthy","service":"TradingPulse.Api"}`.
 
-`GET /debug/prices` shows the pricing engine running live (10 simulated instruments, ticking every 200–600ms). Temporary — replaced by the real `/api/prices/{symbol}` on Day 4.
+`GET /debug/prices` shows the pricing engine running live (10 simulated instruments, ticking every 200–600ms). `GET /debug/orders` shows auto-generated orders and their decisions. Both temporary — replaced by the real API on Day 4.
 
-`dotnet test` runs the Domain unit tests (`tests/TradingPulse.Domain.Tests`).
+`dotnet test` runs the unit tests (`tests/TradingPulse.Domain.Tests`, `tests/TradingPulse.Infrastructure.Tests`).
 
 ## Structure
 
@@ -29,10 +29,11 @@ TradingPulse.slnx
 ├── src/
 │   ├── TradingPulse.Domain          — entities, value objects, enums. No dependencies.
 │   ├── TradingPulse.Application     — interfaces + DTOs. Depends on Domain only.
-│   ├── TradingPulse.Infrastructure  — implementations (pricing engine, tick consumer; rules/persistence Day 3–4). Depends on Application + Domain.
+│   ├── TradingPulse.Infrastructure  — implementations (pricing engine, tick consumer, rules engine, auto-trading; EF Core persistence Day 4). Depends on Application + Domain.
 │   └── TradingPulse.Api             — ASP.NET Core host, composition root. Depends on all above.
 └── tests/
-    └── TradingPulse.Domain.Tests    — xUnit, Domain layer only so far.
+    ├── TradingPulse.Domain.Tests          — xUnit, Domain layer.
+    └── TradingPulse.Infrastructure.Tests  — xUnit, rules engine + auto-trading.
 ```
 Dependencies point inward (`Api → Infrastructure → Application → Domain`); Domain and Application never reference ASP.NET Core or EF Core.
 
@@ -54,6 +55,14 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 - **`IPriceStateRepository.UpsertAsync(PriceSnapshot)` replaced with `ApplyTickAsync(PriceUpdate)`.** A raw "store this snapshot" method would let a caller bypass `PriceState`'s previous-price tracking; `ApplyTickAsync` is the one real write path.
 - **Persistence still deferred to Day 4** — price state is in-memory only (`ConcurrentDictionary`) for now, per the Day 1 tradeoff.
 
+**Day 3**
+- **Each trading rule is its own static method on `TradingRulesEngine`.** `Evaluate` just calls all of them and collects the non-null reasons — every rule is independently unit-testable and the "which rules fired" logic isn't tangled with the checks themselves.
+- **No current price → reject, don't skip.** If `currentPrice` is `null` (no tick seen yet for the symbol), the price-deviation rule rejects rather than silently passing the order through unchecked. The spec doesn't say either way; rejecting is the conservative choice for a trading system.
+- **`IAutoTradingService.TryCreateOrder` takes only the latest snapshot, not a separate "previous" one.** `PriceSnapshot.PreviousMarketPrice` already carries the prior mid price (added Day 2), so a second parameter would just be redundant state the caller has to keep in sync itself.
+- **Auto-order quantity: target a constant notional, not a constant quantity.** `Quantity = 10,000 / CurrentMarketPrice` keeps notional exposure comparable across instruments priced from ~0.6 (AUDUSD) to ~2000 (XAUUSD), rather than a flat quantity that would be a trivial notional on one instrument and a huge one on another.
+- **Auto-trading is wired into `PriceTickProcessor` right after `ApplyTickAsync`**, using the snapshot it returns — no extra repository round-trip to re-fetch "the price that was just written."
+- **Temporary in-memory `IOrderRepository` / `ITradingRulesRepository`**, same rationale as Day 2's price store: lets the full tick → auto-order → rules → persisted-decision pipeline run and be demoed before EF Core (Day 4). `ITradingRulesRepository` reuses the same lock-free swap pattern as `PriceState`.
+
 ## AI Usage Transparency
 
 **Day 1.**
@@ -63,10 +72,14 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 **Day 2.**
 - Pricing engine, tick consumer, and the price-state concurrency design were built with AI assistance, following the Day 1 plan.
 
+**Day 3.**
+- Trading rules engine, auto-trading service, and the pipeline wiring were built with AI assistance, following the Day 2 design.
+
 ## Known Limitations
 
-- No trading rules, auto-trading, persistence, or auth yet — see Design Decisions / Status.
-- `/debug/prices` is a temporary diagnostic endpoint, not the spec's API.
+- Persistence (rules, orders, price state) is in-memory — see Design Decisions / Status; lands Day 4.
+- `/debug/prices` and `/debug/orders` are temporary diagnostic endpoints, not the spec's API.
+- Auto-trading's fixed 10,000 target notional, combined with the default 10,000 max-quantity rule, means low-priced instruments (e.g. AUDUSD, EURGBP) get auto-rejected on quantity more often than higher-priced ones — real behavior of the rules doing their job, but worth tuning defaults for a less lopsided demo.
 - Pricing engine uses an unbounded channel — fine at 10 symbols; would need backpressure handling at a much larger scale.
 - `TradingRules.SymbolWhitelist` — worth a `HashSet<string>` if the list grows large (checked on every order).
 

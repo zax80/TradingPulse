@@ -9,9 +9,11 @@ namespace TradingPulse.Application.Abstractions;
 /// </summary>
 public interface IAutoTradingService
 {
-    /// <param name="previous">The symbol's price snapshot before this tick.</param>
-    /// <param name="latest">The symbol's price snapshot after this tick.</param>
+    /// <param name="latest">
+    /// The symbol's latest price snapshot. <see cref="PriceSnapshot.PreviousMarketPrice"/>
+    /// already carries the prior tick's mid price, so no separate "previous" snapshot is needed.
+    /// </param>
     /// <param name="spreadPercentThreshold">Configured spread-percent threshold.</param>
     /// <returns>The auto-generated order, or <c>null</c> if none should be created this tick.</returns>
-    Order? TryCreateOrder(PriceSnapshot previous, PriceSnapshot latest, decimal spreadPercentThreshold);
+    Order? TryCreateOrder(PriceSnapshot latest, decimal spreadPercentThreshold);
 }

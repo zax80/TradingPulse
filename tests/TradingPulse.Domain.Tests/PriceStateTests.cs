@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Text;
 using TradingPulse.Domain;
 
+namespace TradingPulse.Domain.Tests;
+
 public class PriceStateTests
 {
     [Fact]
