@@ -6,8 +6,21 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Microsoft.Extensions.* (DI, Options, Logging) via the shared framework, ahead of EF Core pulling them in Day 4. -->
+    <!-- Microsoft.Extensions.* (DI, Options, Logging, Configuration) via the shared framework. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Pinned to match the Microsoft.EntityFrameworkCore version Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3
+         actually pulls in (10.0.4) - a higher Design version here caused an assembly version conflict at
+         runtime (FileNotFoundException loading Microsoft.EntityFrameworkCore, since only 10.0.4 got copied
+         to the output folder while Infrastructure.dll was compiled against 10.0.11). Design is build/dotnet-ef
+         tooling only, so this doesn't affect what ships. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
 </Project>

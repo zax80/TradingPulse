@@ -17,9 +17,8 @@ public sealed class PriceTickProcessor(
     IPricingEngine pricingEngine,
     IPriceStateRepository priceStateRepository,
     IAutoTradingService autoTradingService,
-    ITradingRulesEngine tradingRulesEngine,
     ITradingRulesRepository tradingRulesRepository,
-    IOrderRepository orderRepository,
+    IOrderSubmissionService orderSubmissionService,
     ILogger<PriceTickProcessor> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -48,10 +47,8 @@ public sealed class PriceTickProcessor(
             return;
         }
 
-        var isDuplicate = await orderRepository.ExistsWithClientOrderIdAsync(candidate.ClientOrderId, cancellationToken);
-        var decision = tradingRulesEngine.Evaluate(candidate, rules, latest, isDuplicate);
-
-        await orderRepository.AddAsync(candidate, decision, cancellationToken);
+        // Same submission pipeline as the API - get-price/check-duplicate/evaluate/persist lives in one place.
+        var decision = await orderSubmissionService.SubmitAsync(candidate, cancellationToken);
 
         if (decision.Status == DecisionStatus.Rejected)
         {

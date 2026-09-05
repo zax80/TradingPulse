@@ -37,4 +37,8 @@ public sealed class OrderDecision
 
         return new(Guid.NewGuid(), orderId, DecisionStatus.Rejected, reasons, decidedAt);
     }
+
+    /// <summary>Reconstructs a decision from persisted state, preserving its original id. Not for deciding new orders - use Accept/Reject for that.</summary>
+    public static OrderDecision Rehydrate(Guid id, Guid orderId, DecisionStatus status, IReadOnlyList<string> rejectionReasons, DateTimeOffset decidedAt) =>
+        new(id, orderId, status, rejectionReasons, decidedAt);
 }

@@ -2,11 +2,17 @@
 
 Simulates a multi-symbol market data feed, validates/auto-generates trading orders against configurable rules, persists results, exposes a REST API. Interview take-home — see the task brief for full requirements.
 
-**Status: Day 3 of 5.** Trading rules engine, spread-based auto-trading, wired end to end (tick → auto-order → rules → decision persisted). Rules and orders are still in-memory — EF Core persistence lands Day 4.
+**Status: Day 4 of 5.** Persistence (PostgreSQL via EF Core), the real REST API, and the full tick → auto-order → rules → decision pipeline are all wired end to end. README polish and the C++ migration write-up land Day 5.
 
 ## How to Run
 
-**Prerequisites:** .NET 10 SDK, Visual Studio 2022 (17.14+) or the `dotnet` CLI.
+**Prerequisites:** .NET 10 SDK, PostgreSQL (a `docker-compose.yml` is included), Visual Studio 2022 (17.14+) or the `dotnet` CLI.
+
+**Database:**
+```bash
+docker compose up -d
+```
+Starts Postgres on `localhost:5432` with the credentials already in `appsettings.json` (`tradingpulse` / `tradingpulse` — local dev only, not meant to be secret). The API creates the schema itself on startup (see Design Decisions), so no separate migration step is required to run it.
 
 **Visual Studio:** open `TradingPulse.slnx` → `TradingPulse.Api` is already the startup project → F5.
 
@@ -17,7 +23,15 @@ dotnet run --project src/TradingPulse.Api
 ```
 Open `http://localhost:<port>/health` → `{"status":"healthy","service":"TradingPulse.Api"}`.
 
-`GET /debug/prices` shows the pricing engine running live (10 simulated instruments, ticking every 200–600ms). `GET /debug/orders` shows auto-generated orders and their decisions. Both temporary — replaced by the real API on Day 4.
+**API:**
+| Endpoint | Description |
+|---|---|
+| `POST /api/orders` | Submit a trade request (`ClientOrderId`, `Symbol`, `Side`, `Type`, `Price`, `Quantity`) |
+| `GET /api/orders/history?symbol=&side=&origin=&status=&from=&to=&skip=&take=` | Trade history, all filters optional |
+| `GET /api/orders/by-symbol/{symbol}` | Order history for one symbol |
+| `GET /api/rules` | Current trading rules |
+| `PUT /api/rules` | Replace the trading rules (takes effect immediately, no restart) |
+| `GET /api/prices/{symbol}` | Latest price snapshot for one symbol |
 
 `dotnet test` runs the unit tests (`tests/TradingPulse.Domain.Tests`, `tests/TradingPulse.Infrastructure.Tests`).
 
@@ -26,11 +40,12 @@ Open `http://localhost:<port>/health` → `{"status":"healthy","service":"Tradin
 ```
 TradingPulse.slnx
 ├── Directory.Build.props
+├── docker-compose.yml                — Postgres for local development
 ├── src/
 │   ├── TradingPulse.Domain          — entities, value objects, enums. No dependencies.
 │   ├── TradingPulse.Application     — interfaces + DTOs. Depends on Domain only.
-│   ├── TradingPulse.Infrastructure  — implementations (pricing engine, tick consumer, rules engine, auto-trading; EF Core persistence Day 4). Depends on Application + Domain.
-│   └── TradingPulse.Api             — ASP.NET Core host, composition root. Depends on all above.
+│   ├── TradingPulse.Infrastructure  — implementations: pricing engine, tick consumer, rules engine, auto-trading, EF Core/Postgres persistence. Depends on Application + Domain.
+│   └── TradingPulse.Api             — ASP.NET Core host, REST endpoints, composition root. Depends on all above.
 └── tests/
     ├── TradingPulse.Domain.Tests          — xUnit, Domain layer.
     └── TradingPulse.Infrastructure.Tests  — xUnit, rules engine + auto-trading.
@@ -63,6 +78,15 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 - **Auto-trading is wired into `PriceTickProcessor` right after `ApplyTickAsync`**, using the snapshot it returns — no extra repository round-trip to re-fetch "the price that was just written."
 - **Temporary in-memory `IOrderRepository` / `ITradingRulesRepository`**, same rationale as Day 2's price store: lets the full tick → auto-order → rules → persisted-decision pipeline run and be demoed before EF Core (Day 4). `ITradingRulesRepository` reuses the same lock-free swap pattern as `PriceState`.
 
+**Day 4**
+- **Price state: in-memory for reads, EF Core for durability — not one or the other.** The spec explicitly leaves this open ("candidates should make a reasonable design choice... explain the tradeoff"). `IPriceStateRepository` keeps the Day 2 `ConcurrentDictionary` as the read/write path the tick loop and `GET /api/prices/{symbol}` both use — no per-tick database write. A separate `PriceStatePersistenceService` flushes all latest snapshots to Postgres every 3 seconds via `IPriceSnapshotStore`, so the state survives a restart without turning every tick into a database round trip. Tradeoff: up to ~3 seconds of the latest tick is lost on an unclean restart — acceptable for "latest known price," not acceptable if this were the trade blotter itself.
+- **`TradingRules` keeps its Day 1 lock-free read.** `EfTradingRulesRepository` loads the single rules row from Postgres once (lazily, behind a semaphore so concurrent first-callers don't race), caches it as a `Volatile`-swapped reference, and only touches the database again on `SaveAsync`. `GetCurrentAsync` — called on every order submission and every qualifying tick — never waits on I/O after the first load.
+- **Orders and decisions are plain EF Core entities, not the domain classes.** `Order`/`OrderDecision` keep private constructors; `Order.Rehydrate`/`OrderDecision.Rehydrate` reconstruct them from persisted values (preserving the original id) without opening up the `Create*` factories used for minting new ones. Kept the domain model free of `[Key]`/`[Column]` attributes or EF's constructor-binding quirks.
+- **`RejectionReasons` and `SymbolWhitelist` are stored as JSON strings, not Postgres arrays.** Both are small, read-mostly, and never queried by content — a `text` column with `System.Text.Json` is one less provider-specific mapping to get right for what they're used for.
+- **`EnsureCreatedAsync` on startup, not EF Core migrations.** Simplest way to get a working schema for an MVP with no other consumers of this database. Documented as a limitation below, with the real command noted for anyone who wants to add migrations.
+- **`IOrderSubmissionService` factors out the get-price/check-duplicate/evaluate/persist sequence** that Day 3 had inlined in `PriceTickProcessor`. `POST /api/orders` and auto-trading now call the same method — the "auto-generated orders go through the same validation flow" requirement is enforced by sharing code, not by keeping two implementations in sync by hand.
+- **Enums serialize as strings (`JsonStringEnumConverter`), not numbers.** Applies globally via `ConfigureHttpJsonOptions` — readable API responses, no per-endpoint configuration.
+
 ## AI Usage Transparency
 
 **Day 1.**
@@ -75,13 +99,19 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 **Day 3.**
 - Trading rules engine, auto-trading service, and the pipeline wiring were built with AI assistance, following the Day 2 design.
 
+**Day 4.**
+- EF Core/Postgres persistence, the real REST API, and the `IOrderSubmissionService` refactor were built with AI assistance, following the Day 3 design.
+
 ## Known Limitations
 
-- Persistence (rules, orders, price state) is in-memory — see Design Decisions / Status; lands Day 4.
-- `/debug/prices` and `/debug/orders` are temporary diagnostic endpoints, not the spec's API.
+- **No EF Core migrations** — the schema is created with `Database.EnsureCreatedAsync()` on startup, not `dotnet ef migrations`. Fine for a single-environment MVP; a real project would run `dotnet ef migrations add InitialCreate` and apply migrations instead, to get schema versioning and safe upgrades.
 - Auto-trading's fixed 10,000 target notional, combined with the default 10,000 max-quantity rule, means low-priced instruments (e.g. AUDUSD, EURGBP) get auto-rejected on quantity more often than higher-priced ones — real behavior of the rules doing their job, but worth tuning defaults for a less lopsided demo.
 - Pricing engine uses an unbounded channel — fine at 10 symbols; would need backpressure handling at a much larger scale.
 - `TradingRules.SymbolWhitelist` — worth a `HashSet<string>` if the list grows large (checked on every order).
+- Auto-order persistence is awaited inline in `PriceTickProcessor`'s loop — a slow database write delays the next tick. Fine at 10 symbols/sub-second ticks; at higher throughput this would move to a queue so the tick loop never blocks on I/O.
+- Latest price state can lose up to ~3 seconds of data on an unclean restart (the `PriceStatePersistenceService` flush interval) — see Design Decisions / Day 4 for the tradeoff.
+- No Blazor/web UI — out of the spec's requirements (API-only), so it wasn't built to keep the persistence and API work solid within the time budget. The API is fully usable via `curl`/Postman.
+- No authentication/authorization on the API — out of scope for the brief, would be required before this went anywhere near real orders.
 
 ## Eventual C++ Migration
 
