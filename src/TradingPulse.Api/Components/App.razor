@@ -1,0 +1,101 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TradingPulse</title>
+    <style>
+        :root { color-scheme: light; }
+        body {
+            font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background: #f5f6f8;
+            color: #1a1a1a;
+        }
+        main {
+            max-width: 1080px;
+            margin: 0 auto;
+            padding: 24px 16px 64px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            color: #666;
+            margin-top: 0;
+            margin-bottom: 24px;
+            font-size: 0.9rem;
+        }
+        section {
+            background: #fff;
+            border: 1px solid #e2e4e8;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+        section h2 {
+            font-size: 1.05rem;
+            margin-top: 0;
+            margin-bottom: 12px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 6px 10px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            color: #666;
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        tr:last-child td { border-bottom: none; }
+        .status-accepted { color: #1a7f37; font-weight: 600; }
+        .status-rejected { color: #cf222e; font-weight: 600; }
+        .origin-auto { color: #6639ba; font-size: 0.75rem; }
+        form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+        .field { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; }
+        .field label { color: #444; }
+        input, select {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        input[type="number"] { width: 110px; }
+        button {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #fff;
+            font-size: 0.85rem;
+            cursor: pointer;
+            height: 32px;
+        }
+        button:hover { background: #333; }
+        .message {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            padding: 8px 10px;
+            border-radius: 4px;
+        }
+        .message.ok { background: #dafbe1; color: #1a7f37; }
+        .message.error { background: #ffebe9; color: #cf222e; }
+        .checkbox-field { flex-direction: row; align-items: center; gap: 6px; }
+        .hint { color: #888; font-size: 0.75rem; margin-top: 8px; }
+    </style>
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

@@ -9,6 +9,6 @@ namespace TradingPulse.Application.Abstractions;
 /// </summary>
 public interface IPriceSnapshotStore
 {
-    /// <summary>Upserts the latest snapshot for each symbol given.</summary>
+    /// <summary>Inserts or updates the latest snapshot for each symbol given.</summary>
     Task SaveLatestAsync(IReadOnlyList<PriceSnapshot> snapshots, CancellationToken cancellationToken = default);
 }

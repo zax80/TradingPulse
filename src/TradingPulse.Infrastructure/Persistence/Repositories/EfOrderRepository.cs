@@ -24,7 +24,12 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var normalized = clientOrderId.ToLower();
+        // CA1862 suggests string.Equals(..., StringComparison.OrdinalIgnoreCase) here, but this
+        // runs inside an EF Core query - ToLower() translates to SQL LOWER(); the StringComparison
+        // overload does not translate and would throw at runtime.
+#pragma warning disable CA1862
         return await db.Orders.AnyAsync(o => o.ClientOrderId.ToLower() == normalized, cancellationToken);
+#pragma warning restore CA1862
     }
 
     public async Task<IReadOnlyList<OrderHistoryEntry>> GetHistoryAsync(OrderHistoryFilter filter, CancellationToken cancellationToken = default)
@@ -38,7 +43,10 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         if (filter.Symbol is not null)
         {
             var symbol = filter.Symbol.ToLower();
+            // See CA1862 note in ExistsWithClientOrderIdAsync above - same EF query-translation reason.
+#pragma warning disable CA1862
             query = query.Where(x => x.Order.Symbol.ToLower() == symbol);
+#pragma warning restore CA1862
         }
 
         if (filter.Side is not null)
@@ -75,7 +83,7 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
             .Take(filter.Take)
             .ToListAsync(cancellationToken);
 
-        return page.Select(x => new OrderHistoryEntry(x.Order.ToDomain(), x.Decision.ToDomain())).ToList();
+        return [.. page.Select(x => new OrderHistoryEntry(x.Order.ToDomain(), x.Decision.ToDomain()))];
     }
 
     public async Task<IReadOnlyList<OrderHistoryEntry>> GetBySymbolAsync(string symbol, CancellationToken cancellationToken = default)
@@ -83,13 +91,16 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var normalized = symbol.ToLower();
+        // See CA1862 note in ExistsWithClientOrderIdAsync above - same EF query-translation reason.
+#pragma warning disable CA1862
         var page = await (from order in db.Orders
                            join decision in db.OrderDecisions on order.Id equals decision.OrderId
                            where order.Symbol.ToLower() == normalized
                            orderby order.SubmittedAt descending
                            select new { Order = order, Decision = decision })
             .ToListAsync(cancellationToken);
+#pragma warning restore CA1862
 
-        return page.Select(x => new OrderHistoryEntry(x.Order.ToDomain(), x.Decision.ToDomain())).ToList();
+        return [.. page.Select(x => new OrderHistoryEntry(x.Order.ToDomain(), x.Decision.ToDomain()))];
     }
 }
