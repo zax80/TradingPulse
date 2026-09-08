@@ -1,0 +1,260 @@
+{
+  "info": {
+    "name": "TradingPulse API",
+    "description": "Manual test requests for the TradingPulse REST API - matches src/TradingPulse.Api/TradingPulse.Api.http.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "host",
+      "value": "http://localhost:5184",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "tradingpulse-dev-key",
+      "type": "string"
+    },
+    {
+      "key": "clientApiKey",
+      "value": "",
+      "type": "string",
+      "description": "Paste a raw key returned by 'Admin - Create client API key' here to try requests as that client instead of the master {{apiKey}}."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{host}}/health"
+      }
+    },
+    {
+      "name": "Get current trading rules",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/rules"
+      }
+    },
+    {
+      "name": "Update trading rules",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"maxNotionalPerOrder\": 500000,\n  \"maxQuantityPerOrder\": 5000,\n  \"autoTradingSpreadPercentThreshold\": 0.5,\n  \"priceDeviationThresholdPercent\": 0.8,\n  \"duplicateOrderIdCheckEnabled\": true,\n  \"symbolWhitelistEnabled\": false,\n  \"symbolWhitelist\": []\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{host}}/api/rules"
+      }
+    },
+    {
+      "name": "Get latest price - EURUSD",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/prices/EURUSD"
+      }
+    },
+    {
+      "name": "Get latest price - unknown symbol (expect 404)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/prices/NOPE"
+      }
+    },
+    {
+      "name": "Submit a trade request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clientOrderId\": \"MANUAL-1\",\n  \"symbol\": \"EURUSD\",\n  \"side\": \"Buy\",\n  \"type\": \"Limit\",\n  \"price\": 1.08,\n  \"quantity\": 10\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{host}}/api/orders",
+        "description": "Adjust \"price\" to be close to the latest EURUSD mid price, or the price-deviation rule rejects it."
+      }
+    },
+    {
+      "name": "Submit same ClientOrderId again (expect duplicate rejection)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clientOrderId\": \"MANUAL-1\",\n  \"symbol\": \"EURUSD\",\n  \"side\": \"Buy\",\n  \"type\": \"Limit\",\n  \"price\": 1.08,\n  \"quantity\": 10\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{host}}/api/orders"
+      }
+    },
+    {
+      "name": "Trade history - by symbol",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/orders/history?symbol=EURUSD"
+      }
+    },
+    {
+      "name": "Trade history - rejected only",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/orders/history?status=Rejected"
+      }
+    },
+    {
+      "name": "Trade history - auto-generated only",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/orders/history?origin=AutoGenerated"
+      }
+    },
+    {
+      "name": "Orders for one symbol",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/orders/by-symbol/EURUSD"
+      }
+    },
+    {
+      "name": "Admin - Create client API key",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"clientName\": \"postman-client\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{host}}/api/admin/keys",
+        "description": "Master-key only (see ApiKeyMiddleware) - mints a new per-client key. The raw key is returned exactly once in the response body; it is never retrievable again. Copy it into the 'clientApiKey' collection variable, or paste it as the X-Api-Key header on any non-admin request, to try the API as that client instead of the master key."
+      }
+    },
+    {
+      "name": "Admin - List API keys",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/admin/keys",
+        "description": "Master-key only. Metadata for every key ever issued (client name, created/revoked timestamps) - never the raw key material."
+      }
+    },
+    {
+      "name": "Admin - Revoke client API key",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "X-Api-Key",
+            "value": "{{apiKey}}"
+          }
+        ],
+        "url": "{{host}}/api/admin/keys/postman-client",
+        "description": "Master-key only. Revokes every currently active key for the named client (204 No Content), or 404 if none were active. Change the trailing path segment to the clientName you created above."
+      }
+    }
+  ]
+}

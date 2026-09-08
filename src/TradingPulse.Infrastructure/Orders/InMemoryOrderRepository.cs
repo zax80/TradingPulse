@@ -13,17 +13,18 @@ namespace TradingPulse.Infrastructure.Orders;
 public sealed class InMemoryOrderRepository : IOrderRepository
 {
     private readonly ConcurrentQueue<OrderHistoryEntry> _entries = new();
-    private readonly ConcurrentDictionary<string, byte> _clientOrderIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, OrderHistoryEntry> _byClientOrderId = new(StringComparer.OrdinalIgnoreCase);
 
     public Task AddAsync(Order order, OrderDecision decision, CancellationToken cancellationToken = default)
     {
-        _entries.Enqueue(new OrderHistoryEntry(order, decision));
-        _clientOrderIds.TryAdd(order.ClientOrderId, 0);
+        var entry = new OrderHistoryEntry(order, decision);
+        _entries.Enqueue(entry);
+        _byClientOrderId[order.ClientOrderId] = entry;
         return Task.CompletedTask;
     }
 
-    public Task<bool> ExistsWithClientOrderIdAsync(string clientOrderId, CancellationToken cancellationToken = default) =>
-        Task.FromResult(_clientOrderIds.ContainsKey(clientOrderId));
+    public Task<OrderHistoryEntry?> GetByClientOrderIdAsync(string clientOrderId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byClientOrderId.TryGetValue(clientOrderId, out var entry) ? entry : null);
 
     public Task<IReadOnlyList<OrderHistoryEntry>> GetHistoryAsync(OrderHistoryFilter filter, CancellationToken cancellationToken = default)
     {

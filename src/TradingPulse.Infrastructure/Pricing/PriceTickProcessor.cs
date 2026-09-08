@@ -54,7 +54,7 @@ public sealed class PriceTickProcessor(
         {
             logger.LogInformation(
                 "Auto-generated {Side} order for {Symbol} rejected: {Reasons}",
-                candidate.Side, candidate.Symbol, string.Join("; ", decision.RejectionReasons));
+                candidate.Side, candidate.Symbol, string.Join("; ", decision.RejectionReasons.Select(r => r.Message)));
         }
     }
 }

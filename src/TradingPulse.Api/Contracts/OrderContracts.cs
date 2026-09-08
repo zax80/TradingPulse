@@ -1,4 +1,6 @@
-﻿namespace TradingPulse.Api.Contracts;
+﻿using TradingPulse.Domain;
+
+namespace TradingPulse.Api.Contracts;
 
 /// <summary>Request body for <c>POST /api/orders</c>.</summary>
 public sealed record SubmitOrderRequest(
@@ -16,4 +18,4 @@ public sealed record OrderSubmissionResponse(
     string Symbol,
     string Side,
     string Status,
-    IReadOnlyList<string> RejectionReasons);
+    IReadOnlyList<RejectionReason> RejectionReasons);

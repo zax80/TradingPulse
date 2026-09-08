@@ -2,6 +2,7 @@
   <Folder Name="/Solution Items/">
     <File Path="docker-compose.yml" />
     <File Path="README.md" />
+    <File Path="TradingPulse.postman_collection.json" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/TradingPulse.Api/TradingPulse.Api.csproj" />
@@ -12,5 +13,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/TradingPulse.Domain.Tests/TradingPulse.Domain.Tests.csproj" />
     <Project Path="tests/TradingPulse.Infrastructure.Tests/TradingPulse.Infrastructure.Tests.csproj" />
+    <Project Path="tests/TradingPulse.IntegrationTests/TradingPulse.IntegrationTests.csproj" />
   </Folder>
 </Solution>

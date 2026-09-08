@@ -1,29 +1,32 @@
 # TradingPulse — Pricing Engine & Trading Rules Service
- 
+
 Simulates a multi-symbol market data feed, validates/auto-generates trading orders against configurable rules, persists results, exposes a REST API. Interview take-home — see the task brief for full requirements.
- 
-**Status: Day 5 of 5 — complete.** Pricing engine, trading rules, spread-based auto-trading, PostgreSQL persistence, the full REST API, and a Blazor Server dashboard are all wired end to end and verified against a real Postgres instance.
- 
+
+**Status: Day 6 of 6 — complete.** Pricing engine, trading rules, spread-based auto-trading, PostgreSQL persistence, the full REST API, and a Blazor Server dashboard are all wired end to end and verified against a real Postgres instance.
+
 ## How to Run
- 
+
 **Prerequisites:** .NET 10 SDK, PostgreSQL (a `docker-compose.yml` is included), Visual Studio 2022 (17.14+) or the `dotnet` CLI.
- 
+
 **Database:**
 ```bash
 docker compose up -d
 ```
 Starts Postgres on `localhost:5432` with the credentials already in `appsettings.json` (`tradingpulse` / `tradingpulse` — local dev only, not meant to be secret). The API creates the schema itself on startup (see Design Decisions), so no separate migration step is required to run it.
- 
+
+> **If you already ran this before Day 6:** `EnsureCreatedAsync` only creates the schema when the database doesn't exist yet — it does *not* apply incremental changes to one that's already there, so an existing volume won't pick up the new `api_keys` table on its own and API-key checks against it will fail. Run `docker compose down -v && docker compose up -d` once to start from a clean volume (this drops all local data — fine for this dev setup, not something you'd do against anything real).
+
 **Visual Studio:** open `TradingPulse.slnx` → `TradingPulse.Api` is already the startup project → F5.
- 
+
 **CLI:**
 ```bash
 dotnet build
 dotnet run --project src/TradingPulse.Api
 ```
 Open `http://localhost:<port>/health` → `{"status":"healthy","service":"TradingPulse.Api"}`. Open `http://localhost:<port>/` for the Blazor dashboard (latest prices, submit-order form, recent orders, trading rules editor).
- 
-**API:**
+
+**API:** every `/api/**` request needs an `X-Api-Key` header. The default dev/master key is `tradingpulse-dev-key` (in `appsettings.json`, alongside the same "not meant to be secret" caveat as the Postgres credentials) and works everywhere, including the admin endpoints below. `/health` and the dashboard (`/`) are not gated.
+
 | Endpoint | Description |
 |---|---|
 | `POST /api/orders` | Submit a trade request (`ClientOrderId`, `Symbol`, `Side`, `Type`, `Price`, `Quantity`) |
@@ -32,13 +35,18 @@ Open `http://localhost:<port>/health` → `{"status":"healthy","service":"Tradin
 | `GET /api/rules` | Current trading rules |
 | `PUT /api/rules` | Replace the trading rules (takes effect immediately, no restart) |
 | `GET /api/prices/{symbol}` | Latest price snapshot for one symbol |
- 
-`dotnet test` runs the unit tests (`tests/TradingPulse.Domain.Tests`, `tests/TradingPulse.Infrastructure.Tests`).
- 
-`TradingPulse.postman_collection.json` (repo root) has a ready request for every endpoint, including negative cases (unknown symbol → 404, duplicate `ClientOrderId` → 422) — import it and point it at the port your run is using.
- 
+| `POST /api/admin/keys` | Mint a new per-client API key (master key only) — the raw key is returned once, in the response body |
+| `DELETE /api/admin/keys/{clientName}` | Revoke every active key for that client (master key only) |
+| `GET /api/admin/keys` | List every key ever issued, metadata only — never raw key material (master key only) |
+
+`dotnet test` runs the unit tests (`tests/TradingPulse.Domain.Tests`, `tests/TradingPulse.Infrastructure.Tests`) — no external dependencies, these run anywhere.
+
+`dotnet test tests/TradingPulse.IntegrationTests` runs the Postgres integration test suite added Day 6 — it starts and tears down its own throwaway Postgres container via Testcontainers, so it needs a **local Docker daemon running** but nothing else (it does not touch the `docker-compose.yml` database). See Design Decisions / Day 6 for what it covers and an important honesty note on how it was verified.
+
+`TradingPulse.postman_collection.json` (repo root) has a ready request for every endpoint, including negative cases (unknown symbol → 404, duplicate `ClientOrderId` → 422) and the `X-Api-Key` header pre-set via a collection variable — import it and point it at the port your run is using. Three new requests under "Admin - ..." cover minting, listing, and revoking a client key.
+
 ## Structure
- 
+
 ```
 TradingPulse.slnx
 ├── Directory.Build.props
@@ -47,16 +55,17 @@ TradingPulse.slnx
 ├── src/
 │   ├── TradingPulse.Domain          — entities, value objects, enums. No dependencies.
 │   ├── TradingPulse.Application     — interfaces + DTOs. Depends on Domain only.
-│   ├── TradingPulse.Infrastructure  — implementations: pricing engine, tick consumer, rules engine, auto-trading, EF Core/Postgres persistence. Depends on Application + Domain.
+│   ├── TradingPulse.Infrastructure  — implementations: pricing engine, tick consumer, rules engine, auto-trading, EF Core/Postgres persistence, per-client API keys (Security/). Depends on Application + Domain.
 │   └── TradingPulse.Api             — ASP.NET Core host: REST endpoints + Blazor Server dashboard (Components/), composition root. Depends on all above.
 └── tests/
-    ├── TradingPulse.Domain.Tests          — xUnit, Domain layer.
-    └── TradingPulse.Infrastructure.Tests  — xUnit, rules engine + auto-trading.
+    ├── TradingPulse.Domain.Tests          — xUnit, Domain layer. No external dependencies.
+    ├── TradingPulse.Infrastructure.Tests  — xUnit, rules engine + auto-trading. No external dependencies.
+    └── TradingPulse.IntegrationTests      — xUnit + Testcontainers.PostgreSql. Real EF Core/Postgres round trips. Needs a local Docker daemon.
 ```
 Dependencies point inward (`Api → Infrastructure → Application → Domain`); Domain and Application never reference ASP.NET Core or EF Core.
- 
+
 ## Design Decisions
- 
+
 **Day 1**
 - **.NET 10, not .NET 9.** .NET 9 is past end-of-support; .NET 10 (LTS) satisfies "9+" and matches current tooling. `TargetFramework` lives in one place (`Directory.Build.props`).
 - **`PriceUpdate`/`PriceSnapshot` are `readonly record struct`s.** Ticks are produced continuously across 10+ symbols — avoids a per-tick heap allocation. `PriceState`, the mutable per-symbol aggregate, stays a class.
@@ -65,12 +74,14 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 - **`ITradingRulesEngine.Evaluate` is synchronous, no I/O.** Rules, current price, and the duplicate-id result are passed in; all I/O stays with the caller — keeps the highest-scrutiny logic trivially unit-testable.
 - **Auto-generated orders reuse `Order`/`OrderDecision`.** `OrderOrigin` distinguishes them; both flow through the same rules engine, per spec.
 - **No persistence yet.** `Infrastructure` compiles but registers nothing — EF Core lands Day 4.
+
 **Day 2**
 - **`PriceState` reworked to a lock-free atomic snapshot swap.** Day 1 used individually-mutated fields; now a single immutable `PriceSnapshot` is replaced via `Volatile` read/write on each tick. A reader either gets the old snapshot or the fully-formed new one, never a mix — the concurrency mechanism the Day 1 write-up deferred to "once the pricing engine exists to drive it."
 - **Single consumer, not per-symbol locking.** One `BackgroundService` drains the pricing engine's merged tick stream sequentially; since ticks are processed one at a time regardless of symbol, no two ticks for the same symbol are ever applied concurrently, so `PriceState` needs no lock of its own.
 - **Each simulated symbol is its own producer task with its own state.** No shared mutable data between the 10 symbol generators — only the channel they write to is shared, and channels are built for that.
 - **`IPriceStateRepository.UpsertAsync(PriceSnapshot)` replaced with `ApplyTickAsync(PriceUpdate)`.** A raw "store this snapshot" method would let a caller bypass `PriceState`'s previous-price tracking; `ApplyTickAsync` is the one real write path.
 - **Persistence still deferred to Day 4** — price state is in-memory only (`ConcurrentDictionary`) for now, per the Day 1 tradeoff.
+
 **Day 3**
 - **Each trading rule is its own static method on `TradingRulesEngine`.** `Evaluate` just calls all of them and collects the non-null reasons — every rule is independently unit-testable and the "which rules fired" logic isn't tangled with the checks themselves.
 - **No current price → reject, don't skip.** If `currentPrice` is `null` (no tick seen yet for the symbol), the price-deviation rule rejects rather than silently passing the order through unchecked. The spec doesn't say either way; rejecting is the conservative choice for a trading system.
@@ -78,6 +89,7 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 - **Auto-order quantity: target a constant notional, not a constant quantity.** `Quantity = 10,000 / CurrentMarketPrice` keeps notional exposure comparable across instruments priced from ~0.6 (AUDUSD) to ~2000 (XAUUSD), rather than a flat quantity that would be a trivial notional on one instrument and a huge one on another.
 - **Auto-trading is wired into `PriceTickProcessor` right after `ApplyTickAsync`**, using the snapshot it returns — no extra repository round-trip to re-fetch "the price that was just written."
 - **Temporary in-memory `IOrderRepository` / `ITradingRulesRepository`**, same rationale as Day 2's price store: lets the full tick → auto-order → rules → persisted-decision pipeline run and be demoed before EF Core (Day 4). `ITradingRulesRepository` reuses the same lock-free swap pattern as `PriceState`.
+
 **Day 4**
 - **Price state: in-memory for reads, EF Core for durability — not one or the other.** The spec explicitly leaves this open ("candidates should make a reasonable design choice... explain the tradeoff"). `IPriceStateRepository` keeps the Day 2 `ConcurrentDictionary` as the read/write path the tick loop and `GET /api/prices/{symbol}` both use — no per-tick database write. A separate `PriceStatePersistenceService` flushes all latest snapshots to Postgres every 3 seconds via `IPriceSnapshotStore`, so the state survives a restart without turning every tick into a database round trip. Tradeoff: up to ~3 seconds of the latest tick is lost on an unclean restart — acceptable for "latest known price," not acceptable if this were the trade blotter itself.
 - **`TradingRules` keeps its Day 1 lock-free read.** `EfTradingRulesRepository` loads the single rules row from Postgres once (lazily, behind a semaphore so concurrent first-callers don't race), caches it as a `Volatile`-swapped reference, and only touches the database again on `SaveAsync`. `GetCurrentAsync` — called on every order submission and every qualifying tick — never waits on I/O after the first load.
@@ -86,24 +98,39 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
 - **`EnsureCreatedAsync` on startup, not EF Core migrations.** Simplest way to get a working schema for an MVP with no other consumers of this database. Documented as a limitation below, with the real command noted for anyone who wants to add migrations.
 - **`IOrderSubmissionService` factors out the get-price/check-duplicate/evaluate/persist sequence** that Day 3 had inlined in `PriceTickProcessor`. `POST /api/orders` and auto-trading now call the same method — the "auto-generated orders go through the same validation flow" requirement is enforced by sharing code, not by keeping two implementations in sync by hand.
 - **Enums serialize as strings (`JsonStringEnumConverter`), not numbers.** Applies globally via `ConfigureHttpJsonOptions` — readable API responses, no per-endpoint configuration.
+
 **Day 5 (Blazor UI)**
 - **Blazor Server dashboard lives inside `TradingPulse.Api`, not a separate project.** `TradingPulse.Api` was already planned from Day 1 as "REST API + Blazor Server" — API and UI are both the Presentation layer, sharing one composition root. The dashboard's code-behind calls `IPriceStateRepository`/`IOrderRepository`/`IOrderSubmissionService`/`ITradingRulesRepository` directly — the same Application-layer abstractions the REST endpoints use — instead of making HTTP calls back into its own API. One process, one DI container, no self-referencing round trip.
 - **Requires zero new NuGet packages.** `Microsoft.AspNetCore.Components.*` ships inside the `Microsoft.AspNetCore.App` shared framework, already referenced via `FrameworkReference` for the Minimal API. Adding the dashboard didn't add a single external dependency.
 - **Single page (`Dashboard.razor`), `@rendermode InteractiveServer`.** One route (`/`) with four sections — latest prices (polling every 2s via `PeriodicTimer`), submit-order form, recent orders (last 20), trading rules editor — rather than a multi-page app. Matches the actual scope: there's one thing to look at (this system's live state) and one thing to do (submit an order / change a rule), both of which the REST API already exposes.
 - **Plain `<input>`/`<select>` with `@bind`, not `EditForm`/`DataAnnotationsValidator`.** Validation for order submission and rule updates already lives in `ITradingRulesEngine` and the request DTOs on the API side; duplicating it as Blazor data-annotation attributes would be two places to keep in sync for a form with half a dozen fields. The dashboard does minimal client-side sanity checks (required fields, positive numbers) and lets the same `IOrderSubmissionService`/rules validation the API uses produce the authoritative accept/reject.
 - **No `wwwroot`/external CSS.** All styling is a single inline `<style>` block in `App.razor` — consistent with keeping the artifact a self-contained addition to an already-small project, and there was no design system to reuse from elsewhere in the solution.
+
+**Day 6 (Known Limitations follow-ups)**
+- **Duplicate `ClientOrderId` is now idempotent-replay, not always a rejection.** Previously *any* resubmission of a used `ClientOrderId` was rejected by the duplicate-id rule — including a client that legitimately retried after a timeout and never saw the original response. `OrderSubmissionService` now looks up the prior order by `ClientOrderId` first: if the incoming order is byte-for-byte the same request (`Symbol`/`Side`/`Type`/`Price`/`Quantity`), it returns the *original* decision unchanged and writes nothing new — a true retry is free and safe to repeat. A `ClientOrderId` reused with *different* order details is not a retry, so it still falls through to `ITradingRulesEngine` and gets rejected by the duplicate-id rule exactly as before. This mirrors the idempotency-key pattern real payment/trading APIs use (e.g. "same key + same payload = cached result; same key + different payload = conflict").
+- **Rejection reasons are now `RejectionReason { Code, Message }`, not bare strings.** `RejectionReasonCode` (Domain enum: `MaxNotionalExceeded`, `MaxQuantityExceeded`, `PriceDeviationExceeded`, `NoCurrentPrice`, `DuplicateClientOrderId`, `SymbolNotWhitelisted`) lets a client branch on *why* an order was rejected (e.g. "retry is safe" vs "don't retry, fix the request") without parsing text. `Message` stays for logs/UI. Persisted as JSON (same column, `System.Text.Json` with `JsonStringEnumConverter` so the code reads as a name, not a number, if the row is inspected directly) — no schema/migration change.
+- **`IOrderRepository.ExistsWithClientOrderIdAsync` replaced with `GetByClientOrderIdAsync`.** The old method only answered "have we seen this id"; the new one returns the actual prior order+decision, which idempotent-replay needs anyway — one repository round trip instead of two, and no separate existence-tracking structure in the in-memory implementation.
+- **Auto-trading's target notional lowered from 10,000 to 5,000.** At 10,000, the lowest-priced simulated symbol (NZDUSD, ~0.61) produced auto-order quantities (~16,393) that blew straight through the default 10,000 `MaxQuantityPerOrder` rule, so low-priced instruments were auto-rejected on quantity far more often than higher-priced ones — not a bug, but a lopsided demo the Day 5 performance pass flagged and left as a documented limitation at the time. 5,000 keeps every simulated symbol's auto-order quantity comfortably under the default max-quantity rule while still exercising it if the rule is tightened.
+- **Minimal API-key auth added, then upgraded to per-client keys.** `ApiKeyMiddleware` requires a matching `X-Api-Key` header on every `/api/**` request (`/health` and the dashboard are untouched). It started as one shared master secret; per the two limitations flagged for this pass, it now also supports minting a distinct key per calling client via `POST /api/admin/keys`, revoking one via `DELETE /api/admin/keys/{clientName}`, and listing issued keys (metadata only) via `GET /api/admin/keys` — all three gated to the master key only, so a per-client key can never escalate into managing other keys. Still not a real auth system — no scopes/permissions per client, no key expiry, no OAuth2/JWT, and the Blazor Server dashboard still isn't gated by any of this (session/circuit-based auth for Blazor Server is a materially different, heavier mechanism than an HTTP header check, and stayed out of scope). See the two updated Known Limitations bullets below for exactly what's still missing.
+- **Per-client keys: hashed at rest, rotation and revocation via cache invalidation, no bootstrap problem.** `EfApiKeyRepository` stores only a SHA-256 hash of each key (`ApiKeyEntity.KeyHash`, unique-indexed) — the raw value exists only in the one `CreateAsync` response that mints it, matching how Stripe/GitHub present a freshly-issued key. Reads use the same lock-free cache pattern as `EfTradingRulesRepository` (`Volatile`-swapped map, loaded once, invalidated — not incrementally patched — on the next create/revoke) since `ResolveAsync` sits on every `/api/**` request. **Rotation** falls out of the data model for free: minting a second key for the same client name just adds a second active row, so both keys work until the old one is explicitly revoked — no forced cutover window. **Revocation** sets `RevokedAtUtc` on every active row for that client and invalidates the cache, so a revoked key stops working on the *next* request, not after some TTL. No separate bootstrap flow was needed: the existing master key from the first API-key pass still works everywhere, including on the new admin endpoints, so there was never a chicken-and-egg problem of needing a key to mint the first key.
+- **Postgres integration tests: a new project, not more `[Fact]`s in the existing one.** `tests/TradingPulse.IntegrationTests` is deliberately separate from `TradingPulse.Infrastructure.Tests` — the existing suite stays pure and fast (in-memory repositories, no external dependency, runs anywhere `dotnet test` does); the new one spins up a real, throwaway Postgres container per run via `Testcontainers.PostgreSql`, applies the same `EnsureCreatedAsync` bootstrap `Program.cs` uses, and exercises every `Ef*Repository` against actual SQL: the `.ToLower()` symbol-filter translation the CA1862 suppression depends on, the `RejectionReason` JSON round trip (including the enum-as-string convention) through a real write and a *fresh* read, the upsert behavior in `EfPriceSnapshotStore.SaveLatestAsync`, and the unique index/hash-cache-invalidation behavior of the new `EfApiKeyRepository`. All test classes share one xUnit collection (`PostgresCollection`) so they run sequentially against one container instead of racing each other on shared rows like the singleton `trading_rules` row.
+
 ## AI Usage Transparency
- 
+
 **Day 1.**
 - Familiarization with the fundamentals of trading and the key determining factors.
 - The 5-day execution plan (what gets built each day) was drafted with AI assistance: I gave it the task brief and the tech stack, and set the scope/priorities; AI structured that into daily milestones.
+
 **Day 2.**
 - Pricing engine, tick consumer, and the price-state concurrency design were built with AI assistance, following the Day 1 plan.
+
 **Day 3.**
 - Trading rules engine, auto-trading service, and the pipeline wiring were built with AI assistance, following the Day 2 design.
+
 **Day 4.**
 - EF Core/Postgres persistence, the real REST API, and the `IOrderSubmissionService` refactor were built with AI assistance, following the Day 3 design.
 - Hit a real bug on my own machine after Day 4: `Microsoft.EntityFrameworkCore.Design` was pinned to a newer patch version than what `Npgsql.EntityFrameworkCore.PostgreSQL` actually pulled in, and the app threw `FileNotFoundException` on startup. Diagnosed and fixed together with AI (align the pinned version to what the transitive dependency resolves to) once I ran it and hit the error — AI hadn't seen this failure ahead of time since NuGet restore wasn't available in its own environment while writing the Day 4 code.
+
 **Day 5.**
 - README finalized (this section, Known Limitations & Future Improvements, C++ migration write-up) with AI assistance — I directed which points mattered, AI drafted the prose.
 - Performance/concurrency read-through of the whole codebase with AI, looking specifically for anything on the tick hot path that shouldn't be there. Findings are in Known Limitations & Future Improvements below.
@@ -112,28 +139,37 @@ Dependencies point inward (`Api → Infrastructure → Application → Domain`);
   - `CS0103: The name 'InteractiveServer' does not exist in the current context` (`App.razor`, `Dashboard.razor`) — `_Imports.razor` was missing `@using static Microsoft.AspNetCore.Components.Web.RenderMode`, the directive the standard Blazor Web App template includes specifically so `@rendermode="InteractiveServer"` resolves as a bare identifier.
   - `InvalidOperationException: ... contains anti-forgery metadata, but a middleware was not found that supports anti-forgery` at runtime on `/` — Blazor Server's built-in forms (submit-order, save-rules) emit antiforgery tokens automatically; `Program.cs` was missing the `app.UseAntiforgery()` call, required between `UseRouting`/`UseStaticFiles` and the endpoint mappings.
   - Both root-caused and fixed with AI once I pasted the actual error output back — same pattern as the Day 4 EF Core version-conflict bug: the AI's environment can't see errors it can't reproduce, so its first pass at anything it can't compile-check should be expected to need at least one real fix-up round.
+- Also asked AI to fix the VS Error List's Info-level messages (spelling, `CA1862`, `IDE0305`, `ASP0027`) after the UI build went green. It pushed back on one of my own asks: applying `CA1862`'s literal suggestion (`string.Equals(..., StringComparison.OrdinalIgnoreCase)`) inside the EF Core LINQ queries in `EfOrderRepository` would have broken query translation to SQL (that overload doesn't translate; `.ToLower()` does) — it suppressed the warning locally with a comment instead of "fixing" it into a runtime bug. Worth noting as a case where the AI caught a plausible mistake in its own tool's suggestion rather than applying it blindly.
+
+**Day 6.**
+- Went back through Known Limitations & Future Improvements after Day 5 and picked three items worth actually fixing rather than leaving as prose: idempotent-replay handling for duplicate `ClientOrderId`, structured `RejectionReasonCode`s in place of bare rejection strings, and the auto-trading target-notional retune (10,000 → 5,000) so low-priced symbols stop getting auto-rejected on quantity more often than they should. Also added the minimal `X-Api-Key` middleware called out as still missing. All four were built with AI assistance, following my own read of which limitations were worth closing now versus leaving documented.
+- Unlike the EF Core/Blazor work, the non-EF pieces of this change (`RejectionReason`, `TradingRulesEngine`, `OrderSubmissionService`, `InMemoryOrderRepository`, the updated unit tests) *were* compile-checked in the AI's own environment this time, using the same temporary EF-Core-stub trick as Day 4 — and a standalone throwaway console harness (not committed) exercised the new idempotency logic end to end (fresh order, identical retry, conflicting reuse, structured codes) and confirmed all of it behaves as designed before I ever ran it myself. The EF Core-specific half (`EfOrderRepository.GetByClientOrderIdAsync`, the `RejectionReason` JSON persistence in `OrderDecisionEntity`, the API-key middleware wired into `TradingPulse.Api`) still couldn't be compiled here, for the same `nuget.org`-blocked-in-sandbox reason as the rest of the EF Core/Api layer — I ran those myself before treating them as done.
+- Had AI put together a standalone interview-prep document (domain concepts first, then the technical architecture) to help me explain the system clearly — not part of the codebase, a study aid alongside it.
+- Went back to the two remaining Known Limitations items — API-key auth scope and Postgres integration-test coverage — and had AI actually build both rather than leave them as prose: per-client key minting/rotation/revocation (`EfApiKeyRepository`, `ApiKeyGenerator`, the `/api/admin/keys` endpoints) and a new `tests/TradingPulse.IntegrationTests` project against real Postgres via Testcontainers.
+- Verification split the same way Day 4/6 always has, and it's worth being precise about which half is which. **Compile-checked here:** `TradingPulse.Domain`, `TradingPulse.Application`, and `TradingPulse.Infrastructure` (using the same temporary EF-Core-stub trick as before to strip the Npgsql/EF Core package references) all built clean, including the new `ApiKeyGenerator` and `EfApiKeyRepository`. **Runtime-verified here:** a standalone throwaway console harness (not committed) exercised `ApiKeyGenerator` directly (key format, hash determinism, constant-time comparison) plus a plain-`Dictionary` simulation of `EfApiKeyRepository`'s create/resolve/revoke/rotation control flow — all checks passed. **Not verified here, at all:** the `tests/TradingPulse.IntegrationTests` project itself. It needs both a NuGet restore (`Testcontainers.PostgreSql`) and a running Docker daemon, and my sandbox has neither — no `nuget.org` access (the same constraint as the rest of the EF Core/Api layer all week) and no `docker.sock`. So unlike everything else in this project, those test files were written from a careful read of the existing `Ef*Repository` signatures and the Testcontainers API, with no compiler and no test runner ever confirming they're even syntactically correct. Treat that project as a first draft, not a finished, proven one — run `dotnet test tests/TradingPulse.IntegrationTests` locally (Docker required) before trusting it, the same way I had to for the Blazor bugs back on Day 5. Whatever it finds, that's the honest state of this item as of writing this.
+
 ## Known Limitations & Future Improvements
- 
+
 - **No EF Core migrations** — the schema is created with `Database.EnsureCreatedAsync()` on startup, not `dotnet ef migrations`. Fine for a single-environment MVP; a real project would run `dotnet ef migrations add InitialCreate` and apply migrations instead, to get schema versioning and safe upgrades.
-- Auto-trading's fixed 10,000 target notional, combined with the default 10,000 max-quantity rule, means low-priced instruments (e.g. AUDUSD, EURGBP) get auto-rejected on quantity more often than higher-priced ones — real behavior of the rules doing their job, but worth tuning defaults for a less lopsided demo.
 - Pricing engine uses an unbounded channel — fine at 10 symbols; would need backpressure handling at a much larger scale.
 - `TradingRules.SymbolWhitelist` — worth a `HashSet<string>` if the list grows large (checked on every order).
 - Auto-order persistence is awaited inline in `PriceTickProcessor`'s loop — a slow database write delays the next tick. Fine at 10 symbols/sub-second ticks; at higher throughput this would move to a queue so the tick loop never blocks on I/O.
 - Latest price state can lose up to ~3 seconds of data on an unclean restart (the `PriceStatePersistenceService` flush interval) — see Design Decisions / Day 4 for the tradeoff.
-- No authentication/authorization on the API or the dashboard — out of scope for the brief, would be required before this went anywhere near real orders.
+- **API-key auth now supports per-client keys with rotation and revocation, but is still not a real auth system.** `POST/DELETE/GET /api/admin/keys` (master-key only) mint, revoke, and list per-client keys, hashed at rest, cached lock-free like `TradingRules`. What's still missing: no scopes or per-endpoint permissions (any valid key can do everything any other key can), no key expiry, no OAuth2/JWT, and the dashboard still isn't gated by any of this (Blazor Server needs session/circuit-based auth, a materially different mechanism). A real deployment would need scoped/expiring credentials and dashboard authentication before going anywhere near real orders.
 - The Blazor dashboard does its own minimal validation (required fields, positive numbers) rather than `DataAnnotationsValidator`, and shows the API's rejection reasons as plain text rather than mapping them to individual fields — fine for exercising the system by hand, not a replacement for a real ops UI.
 - Dashboard price/order refresh is poll-based (`PeriodicTimer`, every 2s), not push — simplest option for a single-page dashboard; a busier UI would want `IPriceStateRepository` to raise change notifications (or SignalR direct from the tick loop) instead of the page pulling on a timer.
 - **`EfPriceSnapshotStore.SaveLatestAsync` does one `FindAsync` per symbol** on each 3-second flush — fine at 10 symbols (10 tiny round trips every 3s), but should be a single `WHERE Symbol IN (...)` fetch instead once the symbol count grows, so the flush stays one round trip regardless of how many symbols there are. Caught this in the Day 5 performance pass; didn't change it because it's off the hot path and the risk/benefit of touching EF Core code I can't compile-check locally-first wasn't worth it for a non-hot-path query — noted here instead.
 - **`decimal` everywhere for prices/quantities.** Correct choice for money — no binary floating-point rounding surprises — but `decimal` is a software-emulated 128-bit type, meaningfully slower than `double` or a fixed-point integer for high-frequency arithmetic. Not a real cost at this scale (a handful of ticks/sec); would matter if the tick rate went up by orders of magnitude. See Eventual C++ Migration below.
-- Given more time: idempotency key support beyond just `ClientOrderId` rejection (return the original decision on retry instead of a rejection), structured/coded rejection reasons instead of formatted strings (cheaper to produce, easier for a client to branch on), and integration tests against a real (test-container) Postgres instance rather than relying on unit tests + manual API verification.
+- **Postgres integration tests exist now (`tests/TradingPulse.IntegrationTests`, Testcontainers-backed) but are unverified from the AI's own environment.** They cover `EfOrderRepository` (including the JSON `RejectionReason` round trip and the `.ToLower()` symbol-filter translation), `EfTradingRulesRepository`, `EfApiKeyRepository`, and `EfPriceSnapshotStore` against a real, disposable Postgres container — no Docker daemon or NuGet access in the AI's sandbox meant this was written but never compiled or run there (see AI Usage Transparency / Day 6 for the honest split of what was and wasn't checked). Run `dotnet test tests/TradingPulse.IntegrationTests` locally (Docker required) before trusting it; if something doesn't compile or a test fails on the first run, that's the expected shape of "written offline, never executed," not evidence the design itself is wrong.
+
 ## Eventual C++ Migration
- 
+
 If the spread-check/auto-trading path outgrew what .NET can deliver, these are the three places the current design would have to change:
- 
+
 **1. The tick pipeline itself (`SimulatedPricingEngine` → `Channel<PriceUpdate>` → `PriceTickProcessor`).** `System.Threading.Channels` is fast for .NET, but it's still built on `Task`/`async` scheduling through the thread pool — there's real overhead in getting a value from producer to consumer even when nothing is contended. A C++ version would replace it with a lock-free SPSC/MPSC ring buffer per producer (or one MPSC queue feeding a single consumer thread, mirroring the current single-consumer design) and pin the consumer to a dedicated core, so a tick moves from producer to decision logic with no scheduler in the loop at all.
- 
+
 **2. `PriceState`'s atomic snapshot swap.** The current lock-free design (Day 1/2) is deliberately GC-friendly for .NET: each tick allocates a new `PriceSnapshot` wrapped in a `Box` reference and swaps it in via `Volatile.Write` — cheap because .NET's generational GC eats small short-lived allocations for breakfast. C++ has no GC to lean on, so the equivalent design would use `std::atomic` over a trivially-copyable, fixed-size POD struct (or double-buffering with an atomic index flip) — the same "readers never see a torn write" guarantee, but zero heap allocation per tick instead of relying on garbage collection to make the allocation free.
- 
+
 **3. `decimal` for `Price`/`Quantity`/`Spread`/etc.** .NET's `decimal` is a 128-bit software-emulated type — correct for money, but real arithmetic cost per operation compared to native integer/float ops. A C++ port would represent prices as fixed-point integers (price in the smallest tradeable increment, as `int64_t`) — same exactness guarantee `decimal` gives (no binary floating-point rounding), but native-speed arithmetic and comparisons, and it sidesteps needing a `decimal`-equivalent library at all.
- 
+
 Everything else — the rules engine's pure functions, the `IOrderSubmissionService`/`ITradingRulesEngine` boundaries, the persistence layer — stays where it is; none of it is on a path where microseconds matter, and moving it to C++ would trade .NET's productivity for no measurable benefit.

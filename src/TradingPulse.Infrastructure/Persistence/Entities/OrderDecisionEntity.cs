@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using TradingPulse.Domain;
 using TradingPulse.Domain.Enums;
 
@@ -7,6 +8,13 @@ namespace TradingPulse.Infrastructure.Persistence.Entities;
 /// <summary>Persistence model for <see cref="OrderDecision"/>. Rejection reasons are stored as a JSON array string - no fixed count, no separate table needed.</summary>
 public sealed class OrderDecisionEntity
 {
+    // Enum stored as its name (not the numeric value) so the JSON column stays readable if
+    // inspected directly in the database - matches the API's global JsonStringEnumConverter.
+    private static readonly JsonSerializerOptions ReasonsJsonOptions = new()
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
+
     public Guid Id { get; set; }
     public Guid OrderId { get; set; }
     public required string Status { get; set; }
@@ -18,7 +26,7 @@ public sealed class OrderDecisionEntity
         Id = decision.Id,
         OrderId = decision.OrderId,
         Status = decision.Status.ToString(),
-        RejectionReasonsJson = JsonSerializer.Serialize(decision.RejectionReasons),
+        RejectionReasonsJson = JsonSerializer.Serialize(decision.RejectionReasons, ReasonsJsonOptions),
         DecidedAt = decision.DecidedAt,
     };
 
@@ -26,6 +34,6 @@ public sealed class OrderDecisionEntity
         Id,
         OrderId,
         Enum.Parse<DecisionStatus>(Status),
-        JsonSerializer.Deserialize<List<string>>(RejectionReasonsJson) ?? [],
+        JsonSerializer.Deserialize<List<RejectionReason>>(RejectionReasonsJson, ReasonsJsonOptions) ?? [],
         DecidedAt);
 }

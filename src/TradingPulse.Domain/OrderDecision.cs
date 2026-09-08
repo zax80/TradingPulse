@@ -8,14 +8,14 @@ public sealed class OrderDecision
     public Guid Id { get; }
     public Guid OrderId { get; }
     public DecisionStatus Status { get; }
-    public IReadOnlyList<string> RejectionReasons { get; }
+    public IReadOnlyList<RejectionReason> RejectionReasons { get; }
     public DateTimeOffset DecidedAt { get; }
 
     private OrderDecision(
         Guid id,
         Guid orderId,
         DecisionStatus status,
-        IReadOnlyList<string> rejectionReasons,
+        IReadOnlyList<RejectionReason> rejectionReasons,
         DateTimeOffset decidedAt)
     {
         Id = id;
@@ -26,9 +26,9 @@ public sealed class OrderDecision
     }
 
     public static OrderDecision Accept(Guid orderId, DateTimeOffset decidedAt) =>
-        new(Guid.NewGuid(), orderId, DecisionStatus.Accepted, Array.Empty<string>(), decidedAt);
+        new(Guid.NewGuid(), orderId, DecisionStatus.Accepted, Array.Empty<RejectionReason>(), decidedAt);
 
-    public static OrderDecision Reject(Guid orderId, IReadOnlyList<string> reasons, DateTimeOffset decidedAt)
+    public static OrderDecision Reject(Guid orderId, IReadOnlyList<RejectionReason> reasons, DateTimeOffset decidedAt)
     {
         if (reasons.Count == 0)
         {
@@ -39,6 +39,6 @@ public sealed class OrderDecision
     }
 
     /// <summary>Reconstructs a decision from persisted state, preserving its original id. Not for deciding new orders - use Accept/Reject for that.</summary>
-    public static OrderDecision Rehydrate(Guid id, Guid orderId, DecisionStatus status, IReadOnlyList<string> rejectionReasons, DateTimeOffset decidedAt) =>
+    public static OrderDecision Rehydrate(Guid id, Guid orderId, DecisionStatus status, IReadOnlyList<RejectionReason> rejectionReasons, DateTimeOffset decidedAt) =>
         new(id, orderId, status, rejectionReasons, decidedAt);
 }

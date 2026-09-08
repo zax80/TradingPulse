@@ -118,7 +118,7 @@
                         <td class="@(entry.Decision.Status == DecisionStatus.Accepted ? "status-accepted" : "status-rejected")">
                             @entry.Decision.Status
                         </td>
-                        <td>@string.Join("; ", entry.Decision.RejectionReasons)</td>
+                        <td>@string.Join("; ", entry.Decision.RejectionReasons.Select(r => r.Message))</td>
                     </tr>
                 }
             </tbody>
@@ -260,7 +260,7 @@
             _orderAccepted = decision.Status == DecisionStatus.Accepted;
             _orderMessage = _orderAccepted
                 ? $"Accepted - {order.ClientOrderId}"
-                : $"Rejected - {string.Join("; ", decision.RejectionReasons)}";
+                : $"Rejected - {string.Join("; ", decision.RejectionReasons.Select(r => r.Message))}";
 
             if (_orderAccepted)
             {

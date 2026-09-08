@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddSingleton<IPriceSnapshotStore, EfPriceSnapshotStore>();
         services.AddSingleton<ITradingRulesRepository, EfTradingRulesRepository>();
         services.AddSingleton<IOrderRepository, EfOrderRepository>();
+        services.AddSingleton<IApiKeyRepository, EfApiKeyRepository>();
 
         services.AddSingleton<IPricingEngine, SimulatedPricingEngine>();
         services.AddSingleton<ITradingRulesEngine, TradingRulesEngine>();

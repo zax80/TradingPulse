@@ -19,7 +19,7 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> ExistsWithClientOrderIdAsync(string clientOrderId, CancellationToken cancellationToken = default)
+    public async Task<OrderHistoryEntry?> GetByClientOrderIdAsync(string clientOrderId, CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -28,8 +28,14 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         // runs inside an EF Core query - ToLower() translates to SQL LOWER(); the StringComparison
         // overload does not translate and would throw at runtime.
 #pragma warning disable CA1862
-        return await db.Orders.AnyAsync(o => o.ClientOrderId.ToLower() == normalized, cancellationToken);
+        var match = await (from order in db.Orders
+                            join decision in db.OrderDecisions on order.Id equals decision.OrderId
+                            where order.ClientOrderId.ToLower() == normalized
+                            select new { Order = order, Decision = decision })
+            .FirstOrDefaultAsync(cancellationToken);
 #pragma warning restore CA1862
+
+        return match is null ? null : new OrderHistoryEntry(match.Order.ToDomain(), match.Decision.ToDomain());
     }
 
     public async Task<IReadOnlyList<OrderHistoryEntry>> GetHistoryAsync(OrderHistoryFilter filter, CancellationToken cancellationToken = default)

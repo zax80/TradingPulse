@@ -9,8 +9,15 @@ public sealed class SpreadBasedAutoTradingService : IAutoTradingService
 {
     private const decimal AdjustmentPercent = 0.03m; // fixed per spec, not configurable
 
-    /// <summary>Target notional per auto-order; quantity is derived from it so notional stays roughly constant across instruments at very different price levels.</summary>
-    private const decimal TargetNotional = 10_000m;
+    /// <summary>
+    /// Target notional per auto-order; quantity is derived from it so notional stays roughly
+    /// constant across instruments at very different price levels. Set low enough that even the
+    /// lowest-priced simulated symbol (NZDUSD, ~0.61) stays under the default 10,000
+    /// MaxQuantityPerOrder rule (5,000 / 0.61 ≈ 8,197) - at 10,000 it did not (10,000 / 0.61 ≈
+    /// 16,393), so low-priced instruments were auto-rejected on quantity far more often than
+    /// higher-priced ones. Still comfortably exercises the max-quantity rule if it's tightened.
+    /// </summary>
+    private const decimal TargetNotional = 5_000m;
 
     public Order? TryCreateOrder(PriceSnapshot latest, decimal spreadPercentThreshold)
     {

@@ -9,6 +9,7 @@ public sealed class TradingPulseDbContext(DbContextOptions<TradingPulseDbContext
     public DbSet<OrderEntity> Orders => Set<OrderEntity>();
     public DbSet<OrderDecisionEntity> OrderDecisions => Set<OrderDecisionEntity>();
     public DbSet<TradingRulesEntity> TradingRules => Set<TradingRulesEntity>();
+    public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -60,6 +61,16 @@ public sealed class TradingPulseDbContext(DbContextOptions<TradingPulseDbContext
             entity.Property(e => e.MaxQuantityPerOrder).HasPrecision(18, 8);
             entity.Property(e => e.PriceDeviationThresholdPercent).HasPrecision(9, 4);
             entity.Property(e => e.AutoTradingSpreadPercentThreshold).HasPrecision(9, 4);
+        });
+
+        modelBuilder.Entity<ApiKeyEntity>(entity =>
+        {
+            entity.ToTable("api_keys");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ClientName).HasMaxLength(100);
+            entity.Property(e => e.KeyHash).HasMaxLength(64); // SHA-256 hex is always 64 chars
+            entity.HasIndex(e => e.KeyHash).IsUnique();
+            entity.HasIndex(e => e.ClientName);
         });
     }
 }

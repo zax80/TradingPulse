@@ -31,7 +31,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("exceeds the maximum of 500", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.MaxNotionalExceeded, decision.RejectionReasons[0].Code);
+        Assert.Contains("exceeds the maximum of 500", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
@@ -45,7 +46,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("Quantity 10", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.MaxQuantityExceeded, decision.RejectionReasons[0].Code);
+        Assert.Contains("Quantity 10", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
@@ -58,7 +60,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("deviates", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.PriceDeviationExceeded, decision.RejectionReasons[0].Code);
+        Assert.Contains("deviates", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
@@ -70,7 +73,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("No current market price", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.NoCurrentPrice, decision.RejectionReasons[0].Code);
+        Assert.Contains("No current market price", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
@@ -83,7 +87,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("already been used", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.DuplicateClientOrderId, decision.RejectionReasons[0].Code);
+        Assert.Contains("already been used", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
@@ -109,7 +114,8 @@ public class TradingRulesEngineTests
 
         Assert.Equal(DecisionStatus.Rejected, decision.Status);
         Assert.Single(decision.RejectionReasons);
-        Assert.Contains("not on the whitelist", decision.RejectionReasons[0]);
+        Assert.Equal(RejectionReasonCode.SymbolNotWhitelisted, decision.RejectionReasons[0].Code);
+        Assert.Contains("not on the whitelist", decision.RejectionReasons[0].Message);
     }
 
     [Fact]
