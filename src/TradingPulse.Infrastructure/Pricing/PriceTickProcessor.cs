@@ -48,7 +48,10 @@ public sealed class PriceTickProcessor(
         }
 
         // Same submission pipeline as the API - get-price/check-duplicate/evaluate/persist lives in one place.
-        var decision = await orderSubmissionService.SubmitAsync(candidate, cancellationToken);
+        // Passes the rules already fetched above instead of the single-argument overload, which
+        // would fetch them again - both reads are cheap (Volatile.Read over the cached rules), but
+        // there's no reason to do it twice on every qualifying tick.
+        var decision = await orderSubmissionService.SubmitAsync(candidate, rules, cancellationToken);
 
         if (decision.Status == DecisionStatus.Rejected)
         {

@@ -1,7 +1,7 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 @inject IPriceStateRepository PriceStateRepository
-@inject IOrderRepository OrderRepository
+@inject IRecentOrderActivity RecentOrderActivity
 @inject ITradingRulesRepository TradingRulesRepository
 @inject IOrderSubmissionService OrderSubmissionService
 @implements IAsyncDisposable
@@ -222,7 +222,13 @@
     private async Task RefreshAsync()
     {
         _prices = [.. (await PriceStateRepository.GetAllLatestAsync()).OrderBy(p => p.Symbol)];
-        _orders = [.. await OrderRepository.GetHistoryAsync(new OrderHistoryFilter(Take: 20))];
+
+        // Reads the in-memory recent-activity cache, not IOrderRepository - this method runs
+        // every 2s per open dashboard tab (see _pollTimer below), and a database round trip on
+        // every poll, multiplied by however many tabs are open, was pure overhead for a widget
+        // that only ever shows "the last 20 orders". IOrderRepository.GetHistoryAsync (with real
+        // filters/paging) remains the correct choice for the REST history endpoint.
+        _orders = [.. RecentOrderActivity.GetRecent(20)];
     }
 
     private async Task SubmitOrderAsync()

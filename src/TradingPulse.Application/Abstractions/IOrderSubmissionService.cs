@@ -11,4 +11,13 @@ namespace TradingPulse.Application.Abstractions;
 public interface IOrderSubmissionService
 {
     Task<OrderDecision> SubmitAsync(Order order, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Same pipeline as <see cref="SubmitAsync(Order, CancellationToken)"/>, but for a caller that
+    /// has already fetched the current <see cref="TradingRules"/> for another reason (e.g.
+    /// auto-trading, which needs them to evaluate the spread threshold before it even builds a
+    /// candidate order) - avoids a second, redundant <c>ITradingRulesRepository.GetCurrentAsync</c>
+    /// call for the same tick/request.
+    /// </summary>
+    Task<OrderDecision> SubmitAsync(Order order, TradingRules rules, CancellationToken cancellationToken = default);
 }

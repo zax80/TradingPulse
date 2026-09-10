@@ -1,5 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using TradingPulse.Application.Abstractions;
 using TradingPulse.Domain;
 
@@ -11,7 +12,7 @@ namespace TradingPulse.Infrastructure.Pricing;
 /// mutable state between producers), merged into one stream through a
 /// <see cref="Channel{T}"/>.
 /// </summary>
-public sealed class SimulatedPricingEngine : IPricingEngine
+public sealed class SimulatedPricingEngine(ILogger<SimulatedPricingEngine> logger) : IPricingEngine
 {
     private static readonly (string Symbol, decimal InitialMid)[] Instruments =
     [
@@ -39,8 +40,23 @@ public sealed class SimulatedPricingEngine : IPricingEngine
             .Select((instrument, index) => ProduceAsync(instrument.Symbol, instrument.InitialMid, index, channel.Writer, cancellationToken))
             .ToArray();
 
+        // Deliberately fire-and-forget (the awaited stream below is `channel.Reader`, not this
+        // task) - but still observed: a faulted continuation is logged rather than swallowed.
+        // Without the fault check, a bug inside ProduceAsync's per-tick try/catch (below) escaping
+        // that catch - or a future producer that doesn't have one - would leave this Task's
+        // exception completely unobserved: no crash (.NET Core doesn't tear down the process for
+        // an unobserved task fault, unlike old .NET Framework), no log, just a producer that
+        // silently stops ticking for its symbol forever.
         _ = Task.WhenAll(producers).ContinueWith(
-            _ => channel.Writer.TryComplete(),
+            whenAll =>
+            {
+                if (whenAll.IsFaulted)
+                {
+                    logger.LogCritical(whenAll.Exception, "One or more pricing engine producers terminated unexpectedly");
+                }
+
+                channel.Writer.TryComplete();
+            },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
@@ -51,7 +67,7 @@ public sealed class SimulatedPricingEngine : IPricingEngine
         }
     }
 
-    private static async Task ProduceAsync(
+    private async Task ProduceAsync(
         string symbol,
         decimal mid,
         int seedOffset,
@@ -62,20 +78,31 @@ public sealed class SimulatedPricingEngine : IPricingEngine
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var drift = mid * (decimal)(random.NextDouble() - 0.5) * 0.0008m;
-            mid = Math.Max(0.0001m, mid + drift);
-
-            // ~5% of ticks simulate a volatility/liquidity spike, occasionally wide
-            // enough to cross the default auto-trading spread threshold (0.5%).
-            var isSpike = random.NextDouble() < 0.05;
-            var spreadPercent = isSpike
-                ? 0.003m + (decimal)random.NextDouble() * 0.010m
-                : 0.0001m + (decimal)random.NextDouble() * 0.0008m;
-            var halfSpread = mid * spreadPercent / 2m;
-
-            if (PriceUpdate.TryCreate(symbol, mid - halfSpread, mid + halfSpread, DateTimeOffset.UtcNow, out var update, out _))
+            try
             {
-                await writer.WriteAsync(update, cancellationToken);
+                var drift = mid * (decimal)(random.NextDouble() - 0.5) * 0.0008m;
+                mid = Math.Max(0.0001m, mid + drift);
+
+                // ~5% of ticks simulate a volatility/liquidity spike, occasionally wide
+                // enough to cross the default auto-trading spread threshold (0.5%).
+                var isSpike = random.NextDouble() < 0.05;
+                var spreadPercent = isSpike
+                    ? 0.003m + (decimal)random.NextDouble() * 0.010m
+                    : 0.0001m + (decimal)random.NextDouble() * 0.0008m;
+                var halfSpread = mid * spreadPercent / 2m;
+
+                if (PriceUpdate.TryCreate(symbol, mid - halfSpread, mid + halfSpread, DateTimeOffset.UtcNow, out var update, out _))
+                {
+                    await writer.WriteAsync(update, cancellationToken);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Mirrors PriceTickProcessor/PriceStatePersistenceService: log and keep this
+                // producer's loop alive rather than letting one bad tick take the symbol's feed
+                // down for good. See StreamAsync's ContinueWith for the last-resort net if this
+                // producer's Task still ends up faulted despite this.
+                logger.LogError(ex, "Producer for {Symbol} failed to build a tick, will retry", symbol);
             }
 
             await Task.Delay(random.Next(200, 600), cancellationToken);

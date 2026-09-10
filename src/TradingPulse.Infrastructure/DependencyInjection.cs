@@ -32,6 +32,11 @@ public static class DependencyInjection
         services.AddSingleton<IOrderRepository, EfOrderRepository>();
         services.AddSingleton<IApiKeyRepository, EfApiKeyRepository>();
 
+        // Bounded in-memory "recently decided orders" cache - backs the Blazor dashboard's Recent
+        // Orders widget so its poll doesn't hit Postgres on every tick, per open browser tab. Not
+        // a substitute for IOrderRepository (durable, queryable) - see IRecentOrderActivity.
+        services.AddSingleton<IRecentOrderActivity, InMemoryRecentOrderActivity>();
+
         services.AddSingleton<IPricingEngine, SimulatedPricingEngine>();
         services.AddSingleton<ITradingRulesEngine, TradingRulesEngine>();
         services.AddSingleton<IAutoTradingService, SpreadBasedAutoTradingService>();
