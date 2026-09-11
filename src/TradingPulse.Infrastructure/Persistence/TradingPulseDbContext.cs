@@ -10,6 +10,7 @@ public sealed class TradingPulseDbContext(DbContextOptions<TradingPulseDbContext
     public DbSet<OrderDecisionEntity> OrderDecisions => Set<OrderDecisionEntity>();
     public DbSet<TradingRulesEntity> TradingRules => Set<TradingRulesEntity>();
     public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
+    public DbSet<ClientOrderIdReservationEntity> ClientOrderIdReservations => Set<ClientOrderIdReservationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,6 +72,16 @@ public sealed class TradingPulseDbContext(DbContextOptions<TradingPulseDbContext
             entity.Property(e => e.KeyHash).HasMaxLength(64); // SHA-256 hex is always 64 chars
             entity.HasIndex(e => e.KeyHash).IsUnique();
             entity.HasIndex(e => e.ClientName);
+        });
+
+        modelBuilder.Entity<ClientOrderIdReservationEntity>(entity =>
+        {
+            entity.ToTable("client_order_id_reservations");
+            // The primary key *is* the uniqueness guarantee - a second INSERT for a
+            // ClientOrderId already claimed is what EfClientOrderIdReservationStore relies on
+            // to detect a race, no separate unique index needed.
+            entity.HasKey(e => e.ClientOrderIdNormalized);
+            entity.Property(e => e.ClientOrderIdNormalized).HasMaxLength(100);
         });
     }
 }

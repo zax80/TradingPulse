@@ -14,17 +14,22 @@ public sealed class InMemoryOrderRepository : IOrderRepository
 {
     private readonly ConcurrentQueue<OrderHistoryEntry> _entries = new();
     private readonly ConcurrentDictionary<string, OrderHistoryEntry> _byClientOrderId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<Guid, OrderHistoryEntry> _byOrderId = new();
 
     public Task AddAsync(Order order, OrderDecision decision, CancellationToken cancellationToken = default)
     {
         var entry = new OrderHistoryEntry(order, decision);
         _entries.Enqueue(entry);
         _byClientOrderId[order.ClientOrderId] = entry;
+        _byOrderId[order.Id] = entry;
         return Task.CompletedTask;
     }
 
     public Task<OrderHistoryEntry?> GetByClientOrderIdAsync(string clientOrderId, CancellationToken cancellationToken = default) =>
         Task.FromResult(_byClientOrderId.TryGetValue(clientOrderId, out var entry) ? entry : null);
+
+    public Task<OrderHistoryEntry?> GetByOrderIdAsync(Guid orderId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_byOrderId.TryGetValue(orderId, out var entry) ? entry : null);
 
     public Task<IReadOnlyList<OrderHistoryEntry>> GetHistoryAsync(OrderHistoryFilter filter, CancellationToken cancellationToken = default)
     {

@@ -38,6 +38,19 @@ public sealed class EfOrderRepository(IDbContextFactory<TradingPulseDbContext> d
         return match is null ? null : new OrderHistoryEntry(match.Order.ToDomain(), match.Decision.ToDomain());
     }
 
+    public async Task<OrderHistoryEntry?> GetByOrderIdAsync(Guid orderId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var match = await (from order in db.Orders
+                            join decision in db.OrderDecisions on order.Id equals decision.OrderId
+                            where order.Id == orderId
+                            select new { Order = order, Decision = decision })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return match is null ? null : new OrderHistoryEntry(match.Order.ToDomain(), match.Decision.ToDomain());
+    }
+
     public async Task<IReadOnlyList<OrderHistoryEntry>> GetHistoryAsync(OrderHistoryFilter filter, CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

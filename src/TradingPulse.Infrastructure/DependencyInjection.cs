@@ -32,6 +32,11 @@ public static class DependencyInjection
         services.AddSingleton<IOrderRepository, EfOrderRepository>();
         services.AddSingleton<IApiKeyRepository, EfApiKeyRepository>();
 
+        // Race-proof, restart-safe "who claimed this ClientOrderId first" - backed by a database
+        // primary key, separate from IOrderRepository's full audit trail. See
+        // IClientOrderIdReservationStore and OrderSubmissionService.
+        services.AddSingleton<IClientOrderIdReservationStore, EfClientOrderIdReservationStore>();
+
         // Bounded in-memory "recently decided orders" cache - backs the Blazor dashboard's Recent
         // Orders widget so its poll doesn't hit Postgres on every tick, per open browser tab. Not
         // a substitute for IOrderRepository (durable, queryable) - see IRecentOrderActivity.
